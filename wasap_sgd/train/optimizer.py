@@ -2,8 +2,6 @@
 
 import numpy as np
 import logging
-import scipy.sparse as sparse
-from scipy.sparse import coo_matrix
 
 
 class Optimizer(object):
@@ -72,22 +70,13 @@ class MomentumSGD(Optimizer):
         if sync:
             # Leaning rate scheduler
             if self.epoch <= 5:  # Gradually warmup phase
-                old_lr = self.learning_rate
                 self.learning_rate = self.base_lr * ((self.n_workers - 1.0) * self.epoch / 5 + 1.0)
-                # self.momentum *= (self.learning_rate / old_lr)
-                # self.momentum = min(0.99, self.momentum)
 
             if self.epoch >= 200:  # First decay
-                old_lr = self.learning_rate
                 self.learning_rate *= self.lr_decay
-                # self.momentum *= (self.learning_rate / old_lr)
-                # self.momentum = min(0.99, self.momentum)
 
             if self.epoch >= 275:  # Second decay
                 self.learning_rate *= self.lr_decay
-                old_lr = self.learning_rate
-                # self.momentum *= (self.learning_rate / old_lr)
-                # self.momentum = min(0.99, self.momentum
 
         for index, v in gradient.items():
             dw = v[0]

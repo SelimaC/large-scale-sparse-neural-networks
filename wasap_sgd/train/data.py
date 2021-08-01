@@ -25,7 +25,7 @@ class Data(object):
 
         if self.augmentation:
             from keras.preprocessing.image import ImageDataGenerator
-            self.datagen =  ImageDataGenerator(
+            self.datagen = ImageDataGenerator(
                 featurewise_center=False,  # set input mean to 0 over the dataset
                 samplewise_center=False,  # set each sample mean to 0
                 featurewise_std_normalization=False,  # divide inputs by std of the dataset

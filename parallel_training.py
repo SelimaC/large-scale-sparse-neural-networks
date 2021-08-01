@@ -1,7 +1,7 @@
 import argparse
 import logging
 import tensorflow as tf
-from bigmpi4py import MPI
+from mpi4py import MPI
 from time import time
 from utils.load_data import *
 from utils.nn_functions import AlternatedLeftReLU, Softmax, Relu, Sigmoid
@@ -71,17 +71,17 @@ if __name__ == '__main__':
     parser.add_argument('--lr-rate-decay', type=float, default=0.0, help='learning rate decay (default: 0)')
     parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.9)')
     parser.add_argument('--dropout-rate', type=float, default=0.3, help='Dropout rate (default: 0.3)')
-    parser.add_argument('--weight-decay', type=float, default=0.0002, help='Weight decay (l2 regularization)')
+    parser.add_argument('--weight-decay', type=float, default=0.0, help='Weight decay (l2 regularization)')
     parser.add_argument('--epsilon', type=int, default=20, help='Sparsity level (default: 20)')
     parser.add_argument('--zeta', type=float, default=0.3,
                         help='It gives the percentage of unimportant connections which are removed and replaced with '
                              'random ones after every epoch(in [0..1])')
     parser.add_argument('--n-neurons', type=int, default=3000, help='Number of neurons in the hidden layer')
     parser.add_argument('--prune', default=True, help='Perform Importance Pruning', action='store_true')
-    parser.add_argument('--seed', type=int, default=0, help='random seed (default: 1)')
+    parser.add_argument('--seed', type=int, default=1, help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10,
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--n-training-samples', type=int, default=50000, help='Number of training samples')
+    parser.add_argument('--n-training-samples', type=int, default=60000, help='Number of training samples')
     parser.add_argument('--n-testing-samples', type=int, default=10000, help='Number of testing samples')
     parser.add_argument('--augmentation', default=True, help='Data augmentation', action='store_true')
     parser.add_argument('--dataset', default='fashionmnist', help='Specify dataset. One of "cifar10", "fashionmnist",'
@@ -117,7 +117,7 @@ if __name__ == '__main__':
         weight_init = 'he_uniform'
         activations = (AlternatedLeftReLU(-0.6), AlternatedLeftReLU(0.6), AlternatedLeftReLU(-0.6), Softmax)
         if args.dataset == 'fashionmnist':
-            X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(60000, 10000)
+            X_train, Y_train, X_test, Y_test = load_fashion_mnist_data(args.n_training_samples, args.n_testing_samples)
         else:
             X_train, Y_train, X_test, Y_test = load_mnist_data(args.n_training_samples, args.n_testing_samples)
     elif args.dataset == 'madalon':
@@ -133,9 +133,9 @@ if __name__ == '__main__':
         loss = 'cross_entropy'
         activations = (AlternatedLeftReLU(-0.75), AlternatedLeftReLU(0.75), AlternatedLeftReLU(-0.75), Softmax)
         if args.augmentation:
-            X_train, Y_train, X_test, Y_test = load_cifar10_data_not_flattened(50000, 10000)
+            X_train, Y_train, X_test, Y_test = load_cifar10_data_not_flattened(args.n_training_samples, args.n_testing_samples)
         else:
-            X_train, Y_train, X_test, Y_test = load_cifar10_data(50000, 10000)
+            X_train, Y_train, X_test, Y_test = load_cifar10_data(args.n_training_samples, args.n_testing_samples)
     else:
         raise NotImplementedError("The given dataset is not available")
 
@@ -149,8 +149,6 @@ if __name__ == '__main__':
     # Scale up the learning rate for synchronous training
     if args.synchronous:
         learning_rate = learning_rate * (num_workers)
-    else:
-        learning_rate = 0.01
 
     # Initialize logger
     base_file_name = "results/set_mlp_parallel_" + str(args.dataset)+"_" + str(args.epochs) + "_epochs_e" + \
@@ -210,13 +208,15 @@ if __name__ == '__main__':
     if args.mode == 'sgdm':
         algo = Algo(optimizer='sgdm', validate_every=validate_every, lr=learning_rate,
                     sync_every=args.sync_every, weight_decay=args.weight_decay, momentum=args.momentum, n_workers=num_workers)
-    else:
+    elif args.mode == 'sgd':
         algo = Algo(optimizer='sgd', validate_every=validate_every, lr=learning_rate, sync_every=args.sync_every)
-
-    # Instantiate SET model
+    else:
+        raise NotImplementedError("The given optimizer is not available")
 
     start_time = time()
+    # Instantiate SET model
     model = SETMPIModel(dimensions, activations, class_weights=class_weights, master=(rank == 0), **model_config)
+
     step_time = time() - start_time
     if rank == 0:
         logging.info(f"Model creation time:  {step_time}")
@@ -235,6 +235,7 @@ if __name__ == '__main__':
         histories = manager.process.train()
         delta_t = time() - t_0
         manager.free_comms()
+        logging.info("Total execution time is {0:.3f} seconds".format(delta_t))
         logging.info("Testing time is {0:.3f} seconds".format(manager.process.validate_time))
         delta_t -= manager.process.validate_time
         logging.info("Training finished in {0:.3f} seconds".format(delta_t))

@@ -162,6 +162,11 @@ class SET_MLP:
         self.save_filename = ""
         self.input_layer_connections = []
         self.monitor = None
+        self.importance_pruning = False
+
+        self.training_time = 0
+        self.testing_time = 0
+        self.evolution_time = 0
 
         # Weights and biases are initiated by index. For a one hidden layer net you will have a w[1] and w[2]
         self.w = {}
@@ -328,6 +333,7 @@ class SET_MLP:
 
             print("\nSET-MLP Epoch ", i)
             print("Training time: ", t2 - t1)
+            self.training_time += (t2 - t1).seconds
 
             # test model performance on the test data at each epoch
             # this part is useful to understand model performance and can be commented for production settings
@@ -348,11 +354,12 @@ class SET_MLP:
                 print(f"Testing time: {t4 - t3}\n; Loss test: {loss_test}; \n"
                                  f"Accuracy test: {accuracy_test}; \n"
                                  f"Maximum accuracy val: {maximum_accuracy}")
+                self.testing_time += (t4 - t3).seconds
 
             t5 = datetime.datetime.now()
-            if i < epochs - 1:# do not change connectivity pattern after the last epoch
+            if i < epochs - 1:  # do not change connectivity pattern after the last epoch
                 # self.weights_evolution_I() # this implementation is more didactic, but slow.
-                self.weights_evolution_II()  # this implementation has the same behaviour as the one above, but it is much faster.
+                self.weights_evolution_II(i)  # this implementation has the same behaviour as the one above, but it is much faster.
             t6 = datetime.datetime.now()
             print("Weights evolution time ", t6 - t5)
 
@@ -427,13 +434,29 @@ class SET_MLP:
             self.pdw[i] = pdwdok.tocsr()
             self.w[i] = wdok.tocsr()
 
-    def weights_evolution_II(self):
+    def weights_evolution_II(self, epoch=0):
         # this represents the core of the SET procedure. It removes the weights closest to zero in each layer and add new random weights
         # improved running time using numpy routines - Amarsagar Reddy Ramapuram Matavalam (amar@iastate.edu)
         for i in range(1, self.n_layers - 1):
             # uncomment line below to stop evolution of dense weights more than 80% non-zeros
             # if self.w[i].count_nonzero() / (self.w[i].get_shape()[0]*self.w[i].get_shape()[1]) < 0.8:
                 t_ev_1 = datetime.datetime.now()
+
+                # Importance Pruning
+                if self.importance_pruning and epoch % 10 == 0 and epoch > 200:
+                    sum_incoming_weights = np.abs(self.w[i]).sum(axis=0)
+                    t = np.percentile(sum_incoming_weights, 20)
+                    sum_incoming_weights = np.where(sum_incoming_weights <= t, 0, sum_incoming_weights)
+                    ids = np.argwhere(sum_incoming_weights == 0)
+
+                    weights = self.w[i].tolil()
+                    pdw = self.pdw[i].tolil()
+                    weights[:, ids[:,1]]=0
+                    pdw[:, ids[:,1]] = 0
+
+                    self.w[i] = weights.tocsr()
+                    self.pdw[i] = pdw.tocsr()
+
                 # converting to COO form - Added by Amar
                 wcoo = self.w[i].tocoo()
                 vals_w = wcoo.data
@@ -515,7 +538,8 @@ class SET_MLP:
                 # print("Number of non zeros in W and PD matrix after evolution in layer",i,[(self.w[i].data.shape[0]), (self.pdw[i].data.shape[0])])
 
                 t_ev_2 = datetime.datetime.now()
-                print("Weights evolution time for layer", i,"is", t_ev_2 - t_ev_1)
+                print("Weights evolution time for layer", i, "is", t_ev_2 - t_ev_1)
+                self.evolution_time += (t_ev_2 - t_ev_1).seconds
 
     def predict(self, x_test, y_test, batch_size=100):
         """
@@ -562,7 +586,7 @@ if __name__ == "__main__":
 
         # create SET-MLP (MLP with adaptive sparse connectivity trained with Sparse Evolutionary Training)
         set_mlp = SET_MLP((x_train.shape[1], no_hidden_neurons_layer, no_hidden_neurons_layer, no_hidden_neurons_layer, y_train.shape[1]),
-                          (Relu, Relu, Relu, Softmax), epsilon=epsilon)
+                          (AlternatedLeftReLU(-0.6), AlternatedLeftReLU(0.6), AlternatedLeftReLU(-0.6), Softmax), epsilon=epsilon)
 
         start_time = time.time()
         # train SET-MLP
@@ -571,7 +595,10 @@ if __name__ == "__main__":
                     save_filename="results/set_mlp_sequential_" + str(no_training_samples) + "_training_samples_e" + str(epsilon) + "_rand" + str(i), monitor=True)
 
         step_time = time.time() - start_time
-        print("\nTotal training time: ", step_time)
+        print("\nTotal execution time: ", step_time)
+        print("\nTotal training time: ", set_mlp.training_time)
+        print("\nTotal testing time: ", set_mlp.testing_time)
+        print("\nTotal evolution time: ", set_mlp.evolution_time)
         sum_training_time += step_time
 
         # test SET-MLP

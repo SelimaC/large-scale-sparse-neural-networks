@@ -16,23 +16,7 @@ from wasap_sgd.logger import get_logger, set_logging_prefix
 ### Classes ###
 
 class MPIProcess(object):
-    """Base class for processes that communicate with one another via MPI.
-       Attributes:
-           parent_comm: MPI intracommunicator used to communicate with this process's parent
-           parent_rank (integer): rank of this node's parent in parent_comm
-           rank (integer): rank of this node in parent_comm
-           model: SET model to train
-           algo: Algo object defining how to optimize model weights
-           weights: list of numpy arrays storing the last weights received from the parent
-           update: latest update obtained from training
-           data: Data object used to generate training or validation data
-           time_step: for keeping track of time
-           num_epochs: integer giving the number of epochs to train for
-           stop_training: becomes true when it is time to stop training
-           idle_time: kep track of process' idle time
-           validate_time: kep track of process' validation time
-           evolution_time: kep track of process' evolution time
-    """
+    """ Base class for processes that communicate with one another via MPI. """
 
     def __init__(self, parent_comm, process_comm, parent_rank=None, num_epochs=1, data=None, algo=None,
                  model=None, monitor=False, save_filename=None,):
@@ -110,8 +94,7 @@ class MPIProcess(object):
 
     def check_sanity(self):
         """Throws an exception if any model attribute has not been set yet."""
-        for par in ['model',
-                    'update']:
+        for par in ['model', 'update']:
             if not hasattr(self, par) or getattr(self, par) is None:
                 raise Error("%s not found!  Process %s does not seem to be set up correctly." % (par, self.ranks))
 
@@ -137,7 +120,6 @@ class MPIProcess(object):
         t2 = datetime.datetime.now()
         self.idle_time += (t2 - t1).total_seconds()
 
-        #self.algo.set_worker_model_weights(self.model, self.weights, self.gradients)
         self.update = {}
 
     def apply_update(self, sync=False, retain=False, worker=False):
@@ -159,7 +141,7 @@ class MPIProcess(object):
         'begin_final_weights': 6,
         'weights': 12,
         'final_weights': 12,
-        'update': 12
+        'update': 12,
     }
     # This dict is for reverse tag lookups.
     inv_tag_lookup = {value: key for key, value in tag_lookup.items()}
@@ -194,8 +176,7 @@ class MPIProcess(object):
                 raise Error("Attempting to receive %s from parent, but parent rank is None" % tag)
             source = self.parent_rank
         tag_num = self.lookup_mpi_tag(tag)
-        # if tag in ['bool','time']:
-        #    comm.Recv(obj, source=source, tag=tag_num, status=status )
+
         return comm.recv(source=source, tag=tag_num, status=status)
 
     def send(self, obj, tag, dest=None, comm=None):
@@ -211,9 +192,7 @@ class MPIProcess(object):
                 raise Error("Attempting to send %s to parent, but parent rank is None" % tag)
             dest = self.parent_rank
         tag_num = self.lookup_mpi_tag(tag)
-        # if tag in ['time']:
-        #    comm.Send( obj, dest=dest, tag=tag_num )
-        #    return
+
         comm.send(obj, dest=dest, tag=tag_num)
 
     def bcast(self, obj, root=0, comm=None):
@@ -330,7 +309,7 @@ class MPIWorker(MPIProcess):
     """This class trains its NN model and exchanges weight updates with its parent."""
 
     def __init__(self, data, algo, model, process_comm,parent_comm, parent_rank=None,
-                 num_epochs=1, monitor=False, save_filename=None):
+                 num_epochs=10, monitor=False, save_filename=None):
         """Raises an exception if no parent rank is provided. Sets the number of epochs
             using the argument provided, then calls the parent constructor"""
         info = "Creating MPIWorker with rank {0} and parent rank {1} on a communicator of size {2}"
@@ -363,10 +342,6 @@ class MPIWorker(MPIProcess):
         epoch = 0
         batches_per_epoch = self.data.get_train_data().shape[0] // self.data.batch_size
 
-        Y = self.data.get_train_labels()
-        unique_elements, counts_elements = np.unique(np.argmax(Y, axis=-1), return_counts=True)
-        self.logger.info(np.asarray((unique_elements, counts_elements)))
-
         self.logger.info(f"Worker {self.rank} start training")
         if self.monitor:
             self.monitor.start_monitor()
@@ -382,21 +357,12 @@ class MPIWorker(MPIProcess):
 
             tmp = self.model.train_on_batch(x=x_b, y=y_b)
 
-            if self.algo.sync_every > 1:
+            if self.algo.sync_every > 1 or epoch > self.num_epochs * 0.7:
                 self.model.apply_update(tmp)
-
-            if False:#self.algo.sync_every > 1:
-                for index, v in tmp.items():
-                    dw = v[0]
-                    delta = v[1]
-
-                    if index not in self.update:
-                        self.update[index] = (dw, delta)
-                    else:
-                        self.update[index] = (self.update[index][0] + dw, self.update[index][1] + delta)
             else:
                 self.update = tmp
-            if self.algo.should_sync() and self.algo.sync_every == 1:
+
+            if self.algo.should_sync():
                 self.sync_with_parent()
 
             if num_batches % batches_per_epoch == 0:
@@ -423,24 +389,9 @@ class MPIWorker(MPIProcess):
                 # Shuffle data after each epoch
                 self.data.shuffle()
 
-                if epoch > 475:
-                    self.model.learning_rate = 0.01
-                    self.algo.sync_every = 25
+                if epoch > self.num_epochs * 0.7:
+                    self.algo.sync_every = self.num_epochs * 0.3
                     self.model.weight_evolution(epoch)
-                elif epoch > 500:
-                    self.model.learning_rate = 0.01
-                    self.algo.sync_every = 5
-
-                    if epoch % 5 == 0:
-                        self.model.weight_evolution(epoch, worker=True)
-                        self.logger.info("Sending weights to master...")
-                        self.send_weights()
-                        t1 = datetime.datetime.now()
-                        self.time_step = self.recv_time_step()
-                        self.model.set_weights(self.recv_weights())
-                        t2 = datetime.datetime.now()
-                        self.idle_time += (t2 - t1).total_seconds()
-                        self.logger.info("Weights have been sent...")
                 else:
                     self.algo.sync_every = 1
 
@@ -569,7 +520,7 @@ class MPIMaster(MPIProcess):
             self.idle_time += (t2 - t1).total_seconds()
             self.candidates[source] = self.recv_weights(source=source, comm=self.child_comm)
 
-            if len(self.candidates) == 5:
+            if len(self.candidates) == self.num_workers:
                     self.logger.info("Master is averaging models...")
                     self.new_weights = {'w': {}, 'b': {}, 'pdw': {}, 'pdd': {}}
 
@@ -591,10 +542,10 @@ class MPIMaster(MPIProcess):
                                 self.new_weights['b'][index] += bias
 
                     for i, weight in self.new_weights['w'].items():
-                        self.new_weights['w'][i] = weight/5
+                        self.new_weights['w'][i] = weight/self.num_workers
 
                     for i, bias in self.new_weights['b'].items():
-                        self.new_weights['b'][i] = bias/5
+                        self.new_weights['b'][i] = bias/self.num_workers
 
                     for i, weight in self.new_weights['w'].items():
                         wcoo = weight.tocoo()
@@ -633,10 +584,10 @@ class MPIMaster(MPIProcess):
             self.logger.info(f"Processing final model from {source}")
             self.candidates[source] = self.recv_weights(source=source, comm=self.child_comm)
 
-            if len(self.candidates) == 5:
-                    self.logger.info("Master is averaging models...")
+            if len(self.candidates) == self.num_workers:
+                    self.logger.info(f"Master is averaging all {self.num_workers} models...")
                     self.new_weights = {'w': {}, 'b': {}, 'pdw': {}, 'pdd': {}}
-                    best_accuracy = 0
+
                     for c, candidate in self.candidates.items():
                         w = candidate['w']
                         b = candidate['b']
@@ -654,10 +605,10 @@ class MPIMaster(MPIProcess):
                                 self.new_weights['b'][index] += bias
 
                     for i, weight in self.new_weights['w'].items():
-                        self.new_weights['w'][i] = weight/5
+                        self.new_weights['w'][i] = weight/self.num_workers
 
                     for i, bias in self.new_weights['b'].items():
-                        self.new_weights['b'][i] = bias/5
+                        self.new_weights['b'][i] = bias/self.num_workers
 
                     for i, weight in self.new_weights['w'].items():
                         wcoo = weight.tocoo()
@@ -707,7 +658,6 @@ class MPIMaster(MPIProcess):
         accepted = self.accept_update()
         self.send_bool(accepted, dest=source, comm=self.child_comm)
         if accepted:
-
             t1 = datetime.datetime.now()
             self.recv_update(source=source, comm=self.child_comm,
                              add_to_existing=self.is_synchronous())
@@ -716,34 +666,6 @@ class MPIMaster(MPIProcess):
             self.idle_time += (t2 - t1).total_seconds()
 
             if self.decide_whether_to_sync():
-                if self.algo.send_before_apply:
-
-                    self.sync_parent()
-                    self.sync_children()
-                    self.apply_update(sync=self.is_synchronous())
-
-                    if self.algo.validate_every > 0 and self.time_step > 0:
-                        if self.time_step % self.algo.validate_every == 0:
-                            # self.weights_to_save.append(self.weights['w'])
-                            # self.biases_to_save.append(self.weights['b'])
-
-                            self.logger.info("Start validation")
-                            self.validate()
-                            if self.epoch < self.num_epochs // self.num_workers - 1:
-                                t5 = datetime.datetime.now()
-                                self.logger.info(self.weights['w'][1].count_nonzero())
-                                self.logger.info(self.weights['w'][2].count_nonzero())
-                                self.logger.info(self.weights['w'][3].count_nonzero())
-                                self.logger.info(self.weights['w'][4].count_nonzero())
-                                self.logger.info("Start weight evolution")
-                                self.model.model.weights_evolution_III()
-                                t6 = datetime.datetime.now()
-                                self.logger.info(f"Weights evolution time  {t6 - t5}")
-                                self.evolution_time += (t6 - t5).seconds
-
-                            self.weights = self.model.get_weights()
-                            self.logger.info(f"Master epoch {self.epoch + 1}")
-                else:
                     if len(self.evolution_workers_list) != 0 and not self.is_synchronous():
                         retain = True
                         if source in self.evolution_workers_list:
@@ -763,13 +685,13 @@ class MPIMaster(MPIProcess):
                             # self.biases_to_save.append(self.weights['b'])
                             self.epoch += 1
 
-                            if self.epoch >= 25:
-                                if self.epoch % 25 == 0:
-                                    old_lr = self.model.learning_rate
-                                    self.model.learning_rate *= 0.9
-                                    self.model.momentum_correction = self.model.learning_rate / old_lr
-                                else:
-                                    self.model.momentum_correction = 1
+                            # if self.epoch >= 25:
+                            #     if self.epoch % 25 == 0:
+                            #         old_lr = self.model.learning_rate
+                            #         self.model.learning_rate *= 0.9
+                            #         self.model.momentum_correction = self.model.learning_rate / old_lr
+                            #     else:
+                            #         self.model.momentum_correction = 1
 
                             if self.epoch < self.num_epochs - 1:
                                 t5 = datetime.datetime.now()
@@ -781,7 +703,6 @@ class MPIMaster(MPIProcess):
                                     self.evolution_workers_list.remove(source)
 
                                 t6 = datetime.datetime.now()
-                                self.logger.info(self.evolution_workers_list)
                                 self.logger.info(f"Weights evolution time  {t6 - t5}")
                                 self.evolution_time += (t6 - t5).seconds
                                 self.weights = self.model.get_weights()
@@ -849,7 +770,7 @@ class MPIMaster(MPIProcess):
         self.waiting_workers_list = []
         self.evolution_workers_list = []
 
-        self.logger.info("Master initialize training")
+        self.logger.info(f"Master initialize training with {self.num_workers} workers")
 
         while self.running_workers:
             t1 = datetime.datetime.now()

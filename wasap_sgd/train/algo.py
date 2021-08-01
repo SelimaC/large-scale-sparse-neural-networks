@@ -4,17 +4,7 @@ from .optimizer import get_optimizer
 
 
 class Algo(object):
-    """The Algo class contains all information about the training algorithm.
-        Attributes:
-          optimizer: instance of the Optimizer class used to compute training updates
-          optimizer_name: name of the optimizer
-          staleness: difference in time step between master and most recent worker's update
-          worker_update_type: whether to send weights or gradients to parent process
-          send_before_apply: whether to send weights before applying update
-          step_counter: counts time steps to determine when to sync
-          (used for Elastic Averaging SGD)
-        See __init__ for list of other supported attributes
-          """
+    """The Algo class contains all information about the training algorithm """
 
     # available options and their default values
     supported_opts = {
@@ -31,10 +21,7 @@ class Algo(object):
                loss: string naming the loss function to be used for training
                validate_every: number of time steps to wait between validations
                sync_every: number of time steps to wait before getting weights from parent
-               mode: 'sgd', 'easgd' or 'gem' are supported
-               elastic_force: alpha constant in the Elastic Averaging SGD algorithm
-               elastic_lr: EASGD learning rate for worker
-               elastic_momentum: EASGD momentum for worker
+               mode: 'sgd' or 'sgdm' are supported
             Optimizer configuration options should be provided as additional
             named arguments (check your chosen optimizer class for details)."""
         for opt in self.supported_opts:
@@ -58,10 +45,6 @@ class Algo(object):
 
         self.step_counter = 0
         self.worker_update_type = 'update'
-        self.send_before_apply = False
-
-        # Keep track if internal state was restored
-        self.restore = False
 
     def get_config(self):
         config = {}
@@ -78,9 +61,7 @@ class Algo(object):
     ### For Worker ###
     def compute_update(self, cur_weights, new_weights):
         """Computes the update to be sent to the parent process"""
-        if self.worker_update_type == 'gem':
-            return self.optimizer.begin_compute_update(cur_weights, new_weights)
-        elif self.worker_update_type == 'weights':
+        if self.worker_update_type == 'weights':
             return new_weights
         else:
             update = {'pdw': {}, 'pdd': {}}
