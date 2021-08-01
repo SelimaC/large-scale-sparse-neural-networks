@@ -1,0 +1,12 @@
+Keras==2.3.1
+Keras-Preprocessing==1.1.0
+llvmlite==0.31.0
+matplotlib==3.1.1
+mpi4py==3.0.3
+numba==0.48.0
+numpy==1.21.1
+pandas==0.25.3
+python-dateutil==2.8.1
+scikit-learn==0.22.1
+scipy==1.7.0
+tensorflow==1.15.0
