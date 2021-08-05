@@ -6,11 +6,11 @@ Proof of concept implementations associated with https://arxiv.org/abs/2102.0173
 
 ## Abstract
 Recently, sparse training methods have started to be established as a de facto approach for 
-training and inference eiciencyin artificial neural networks. Yet, this eiciency is just in theory. 
-In practice, everyone uses a binary mask to simulate sparsitysince the typical deep learning soware 
+training and inference efficiency in artificial neural networks. Yet, this efficiency is just in theory. 
+In practice, everyone uses a binary mask to simulate sparsity since the typical deep learning software 
 and hardware are optimized for dense matrix operations.  In this paper, we take an orthogonal approach, 
 and we show that we can train truly sparse neural networks to harvest their full potential.  To achieve 
-this goal, we introduce three novel contributions1, specially designed for sparse neural networks:  **(1)** a 
+this goal, we introduce three novel contributions, specially designed for sparse neural networks:  **(1)** a 
 parallel training algorithm and its corresponding sparse implementation from scratch, **(2)** 
 an activation function with non-trainable parameters to favour the gradient flow, and **(3)** a 
 hidden neurons importance metric to eliminate redundancies. All in one, we are able to break the record 
@@ -32,4 +32,4 @@ All the experiments (with the exception of the Extreme large sparse MLPs subsect
 following configuration:
 * **Hardware** configuration: CPU Intel Core i7-9750H, 2.60 GHz×6, RAM 32 GB, 
 Hard disk 1000 GB, NVIDIA GeForceGTX 1650 4GB.
-* **Soware** used: Windows 10, Python 3.7, Numpy 1.19.1, SciPy 1.4.1, and Numba 0.48.0
+* **Sofware** used: Windows 10, Python 3.7, Numpy 1.19.1, SciPy 1.4.1, and Numba 0.48.0
